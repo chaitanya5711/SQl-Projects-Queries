@@ -1,0 +1,116 @@
+1. Data Preparation
+Created a staging table to avoid modifying raw data
+Copied dataset into a working environment
+CREATE TABLE layoff_staging LIKE layoffs;
+
+INSERT INTO layoff_staging
+SELECT * FROM layoffs;
+
+2. Removing Duplicates
+Used ROW_NUMBER() to identify duplicate rows
+Removed duplicates using self-join technique
+DELETE t1
+FROM layoff_staging t1
+JOIN layoff_staging t2
+ON t1.company = t2.company
+AND t1.location = t2.location
+AND t1.industry = t2.industry
+AND t1.total_laid_off = t2.total_laid_off
+AND t1.date = t2.date
+AND t1.id > t2.id;
+
+
+3. Data Standardization
+✔ Removed extra spaces
+UPDATE layoff_staging
+SET company = TRIM(company);
+✔ Fixed inconsistent industry names
+UPDATE layoff_staging
+SET industry = 'Crypto'
+WHERE industry LIKE 'Crypto%';
+✔ Cleaned country names
+UPDATE layoff_staging
+SET country = TRIM(TRAILING '.' FROM country);
+
+
+4. Date Formatting
+
+Converted text date into proper SQL date format:
+
+UPDATE layoff_staging
+SET date = STR_TO_DATE(date, '%m/%d/%y');
+
+
+5. Handling Missing Values
+✔ Filled missing industry values using self-join
+UPDATE layoff_staging t1
+JOIN layoff_staging t2
+ON t1.company = t2.company
+SET t1.industry = t2.industry
+WHERE t1.industry IS NULL;
+
+
+✔ Removed rows with no useful data
+
+DELETE FROM layoff_staging
+WHERE total_laid_off IS NULL
+AND percentage_laid_off IS NULL;
+
+
+📊 Exploratory Data Analysis (EDA)
+
+1. Total Layoffs by Company
+SELECT company, SUM(total_laid_off) AS total_layoffs
+FROM layoff_staging
+GROUP BY company
+ORDER BY total_layoffs DESC;
+
+
+2. Layoffs by Industry
+SELECT industry, SUM(total_laid_off)
+FROM layoff_staging
+GROUP BY industry
+ORDER BY 2 DESC;
+
+
+3. Layoffs by Country
+SELECT country, SUM(total_laid_off)
+FROM layoff_staging
+GROUP BY country
+ORDER BY 2 DESC;
+
+4. Yearly Trends
+SELECT YEAR(date) AS year, SUM(total_laid_off)
+FROM layoff_staging
+GROUP BY year
+ORDER BY year;
+
+5. Monthly Trends
+SELECT MONTH(date) AS month, SUM(total_laid_off)
+FROM layoff_staging
+GROUP BY month;
+
+6. Rolling Total Layoffs
+WITH monthly_data AS (
+  SELECT DATE_FORMAT(date, '%Y-%m') AS month,
+         SUM(total_laid_off) AS total
+  FROM layoff_staging
+  GROUP BY month
+)
+SELECT month,
+       total,
+       SUM(total) OVER (ORDER BY month) AS rolling_total
+FROM monthly_data;
+
+
+7. Top Companies per Year
+WITH company_year AS (
+  SELECT company,
+         YEAR(date) AS year,
+         SUM(total_laid_off) AS total
+  FROM layoff_staging
+  GROUP BY company, year
+)
+SELECT *,
+       DENSE_RANK() OVER (PARTITION BY year ORDER BY total DESC) AS rank
+FROM company_year;
